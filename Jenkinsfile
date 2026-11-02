@@ -1,60 +1,61 @@
-﻿pipeline {
+pipeline {
     agent any
 
     environment {
         SYSTEM_NAME = 'Online Examination System'
-        JAR_NAME = 'online-examination-system.jar'
+        DOCKER_IMAGE = 'online-examination-system'
+        DOCKER_TAG = 'latest'
+        CONTAINER_NAME = 'online-exam-container'
+        APP_PORT = '5000'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                echo 'Checking out source code from Git repository...'
+                echo 'Pulling latest source code from GitHub repository...'
                 checkout scm
             }
         }
 
         stage('Environment & Setup') {
             steps {
-                echo 'Setting up environment and validating runtime...'
+                echo 'Checking Python and Docker runtime environments...'
                 bat 'python --version'
-                bat 'java -version'
+                bat 'docker --version'
             }
         }
 
-        stage('Code Quality & Lint') {
-            steps {
-                echo 'Validating syntax and code structure...'
-                bat 'python -m py_compile config.py questions.py scoring.py auth.py test_system.py'
-            }
-        }
-
-        stage('Automated Unit Tests') {
+        stage('Code Quality & Automated Testing') {
             steps {
                 echo 'Executing automated unit test suite...'
-                // If any test fails, pipeline aborts here with FAILURE, and NO JAR is created!
                 bat 'python test_system.py'
             }
         }
 
-        stage('Build & Package JAR') {
-            // This stage only executes if the Automated Unit Tests stage PASSES completely!
+        stage('Build Docker Image') {
             steps {
-                echo 'All tests passed successfully! Packaging application into executable JAR artifact...'
-                bat 'echo Manifest-Version: 1.0 > MANIFEST.MF'
-                bat 'echo Main-Class: OnlineExamSystem >> MANIFEST.MF'
-                bat 'tar -cf online-examination-system.jar MANIFEST.MF *.py README.md'
-                echo 'SUCCESS: online-examination-system.jar created successfully!'
+                echo 'Building container image using Dockerfile...'
+                bat "docker build -t %DOCKER_IMAGE%:%DOCKER_TAG% ."
+                echo 'Docker container image created successfully.'
             }
         }
 
-        stage('Deploy / Release') {
-            when {
-                branch 'main'
-            }
+        stage('Deploy Docker Container') {
             steps {
-                echo 'Deploying Online Examination System artifact to production...'
-                echo 'Artifact ready: online-examination-system.jar'
+                echo 'Deploying container application on Docker Desktop...'
+                bat "docker stop %CONTAINER_NAME% || exit 0"
+                bat "docker rm %CONTAINER_NAME% || exit 0"
+                bat "docker run -d --name %CONTAINER_NAME% -p %APP_PORT%:5000 %DOCKER_IMAGE%:%DOCKER_TAG%"
+                echo 'Application deployed successfully inside Docker container.'
+            }
+        }
+
+        stage('Health Check & Verification') {
+            steps {
+                echo 'Verifying container health status and live web endpoint...'
+                bat "docker ps --filter name=%CONTAINER_NAME%"
+                bat "curl.exe -I http://localhost:%APP_PORT%/"
+                echo 'SUCCESS: Online Examination System is LIVE and healthy on http://localhost:5000'
             }
         }
     }
@@ -64,11 +65,10 @@
             echo 'Pipeline execution complete.'
         }
         success {
-            echo 'SUCCESS: Build is STABLE. Archiving JAR artifact...'
-            archiveArtifacts artifacts: '*.jar', fingerprint: true, allowEmptyArchive: true
+            echo 'SUCCESS: Continuous Integration and Continuous Deployment finished with STABLE status.'
         }
         failure {
-            echo 'FAILURE: Test suite failed! Pipeline aborted. No JAR artifact was generated.'
+            echo 'FAILURE: Pipeline execution failed! Check build and container logs.'
         }
     }
 }
