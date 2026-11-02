@@ -5,8 +5,10 @@ pipeline {
         SYSTEM_NAME = 'Online Examination System'
         DOCKER_IMAGE = 'online-examination-system'
         DOCKER_TAG = 'latest'
-        CONTAINER_NAME = 'online-exam-container'
-        APP_PORT = '5000'
+        K8S_CLUSTER = 'k8s-lab6'
+        DEPLOYMENT_NAME = 'online-exam-deployment'
+        SERVICE_NAME = 'online-exam-service'
+        NODEPORT = '30080'
     }
 
     stages {
@@ -17,17 +19,19 @@ pipeline {
             }
         }
 
-        stage('Environment & Setup') {
+        stage('Environment & Toolchain') {
             steps {
-                echo 'Checking Python and Docker runtime environments...'
+                echo 'Validating Python, Docker, and Kubernetes (kubectl) toolchains...'
                 bat 'python --version'
                 bat 'docker --version'
+                bat 'kubectl version --client'
+                bat 'kubectl get nodes'
             }
         }
 
         stage('Code Quality & Automated Testing') {
             steps {
-                echo 'Executing automated unit test suite...'
+                echo 'Running unit test suite...'
                 bat 'python test_system.py'
             }
         }
@@ -40,35 +44,44 @@ pipeline {
             }
         }
 
-        stage('Deploy Docker Container') {
+        stage('Kubernetes Cluster Deployment') {
             steps {
-                echo 'Deploying container application on Docker Desktop...'
-                bat "docker stop %CONTAINER_NAME% || exit 0"
-                bat "docker rm %CONTAINER_NAME% || exit 0"
-                bat "docker run -d --name %CONTAINER_NAME% -p %APP_PORT%:5000 %DOCKER_IMAGE%:%DOCKER_TAG%"
-                echo 'Application deployed successfully inside Docker container.'
+                echo 'Loading container image into Kubernetes cluster nodes...'
+                bat "kind load docker-image %DOCKER_IMAGE%:%DOCKER_TAG% --name %K8S_CLUSTER%"
+                echo 'Applying Kubernetes Deployment and Service manifests...'
+                bat 'kubectl apply -f k8s/deployment.yaml'
+                bat 'kubectl apply -f k8s/service.yaml'
+                bat 'kubectl rollout status deployment/%DEPLOYMENT_NAME%'
             }
         }
 
-        stage('Health Check & Verification') {
+        stage('Replica Scaling & Self-Healing') {
             steps {
-                echo 'Verifying container health status and live web endpoint...'
-                bat "docker ps --filter name=%CONTAINER_NAME%"
-                bat "curl.exe -I http://localhost:%APP_PORT%/"
-                echo 'SUCCESS: Online Examination System is LIVE and healthy on http://localhost:5000'
+                echo 'Scaling deployment replicas to 4 pods for high availability...'
+                bat 'kubectl scale deployment %DEPLOYMENT_NAME% --replicas=4'
+                bat 'kubectl get pods -l app=online-exam'
+            }
+        }
+
+        stage('Cluster Health & Verification') {
+            steps {
+                echo 'Verifying Kubernetes NodePort service endpoint...'
+                bat 'kubectl get svc %SERVICE_NAME%'
+                bat "curl.exe -I http://localhost:%NODEPORT%/"
+                echo 'SUCCESS: Online Examination System is LIVE on Kubernetes at http://localhost:30080'
             }
         }
     }
 
     post {
         always {
-            echo 'Pipeline execution complete.'
+            echo 'Lab 6 Pipeline execution complete.'
         }
         success {
-            echo 'SUCCESS: Continuous Integration and Continuous Deployment finished with STABLE status.'
+            echo 'SUCCESS: Automated CI/CD, Containerization, and Kubernetes Orchestration finished with STABLE status.'
         }
         failure {
-            echo 'FAILURE: Pipeline execution failed! Check build and container logs.'
+            echo 'FAILURE: Pipeline execution failed! Check pod events and container logs.'
         }
     }
 }
